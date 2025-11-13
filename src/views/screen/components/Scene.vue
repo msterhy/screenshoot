@@ -105,6 +105,13 @@ let controlsStartTarget = new Vector3()
 let controlsTargetTarget = new Vector3()
 let panelPositionUpdateFrameCount = 0
 
+// 自动环绕相关
+let autoRotateTimer: number | null = null
+const autoRotateDelay = 5000 // 用户停止操作后5秒重新启用自动环绕
+const autoRotateSpeed = 5 // 自动环绕速度
+let isUserInteracting = false // 标记用户是否正在交互
+let lastInteractionTime = 0 // 最后一次交互时间
+
 const initScene = () => {
   if (!container.value) return
 
@@ -126,6 +133,10 @@ const initScene = () => {
 
   controls = new OrbitControls(camera, renderer.domElement)
   controls.enablePan = true
+  
+  // 启用自动环绕
+  controls.autoRotate = true
+  controls.autoRotateSpeed = autoRotateSpeed
 
   container.value.appendChild(renderer.domElement)
 }
@@ -138,8 +149,17 @@ const animate = () => {
     renderer.setSize(clientWidth, clientHeight)
     renderer.setPixelRatio(window.devicePixelRatio)
     
-    // 更新相机动画
+    // 更新相机动画（动画期间会调用 controls.update()）
     updateCameraAnimation()
+    
+    // 检查用户交互超时
+    checkUserInteractionTimeout()
+    
+    // 更新控制器（自动环绕需要每帧更新，动画期间已在 updateCameraAnimation 中更新）
+    // 确保每帧都调用 update() 以保持平滑的自动环绕
+    if (controls && !isAnimating) {
+      controls.update()
+    }
     
     renderer.render(scene, camera)
 
@@ -406,6 +426,8 @@ const handleClosePanel = () => {
   }
   // 返回初始视角
   resetCameraToInitial()
+  // 关闭面板后，延迟启用自动环绕
+  enableAutoRotateDelayed()
 }
 
 const handleBackToInitial = () => {
@@ -479,8 +501,9 @@ const animateCameraToPool = (mesh: Mesh) => {
   isAnimating = true
   cameraAnimationStartTime = performance.now()
   
-  // 禁用控制器，避免用户操作干扰动画
+  // 禁用控制器和自动环绕，避免用户操作干扰动画
   controls.enabled = false
+  disableAutoRotate()
 }
 
 // 重置相机到初始位置
@@ -495,6 +518,7 @@ const resetCameraToInitial = () => {
   isAnimating = true
   cameraAnimationStartTime = performance.now()
   controls.enabled = false
+  disableAutoRotate()
 }
 
 // 更新相机动画
@@ -516,6 +540,59 @@ const updateCameraAnimation = () => {
   if (progress >= 1) {
     isAnimating = false
     controls.enabled = true
+    // 动画完成后，延迟启用自动环绕
+    enableAutoRotateDelayed()
+  }
+}
+
+// 停止自动环绕
+const disableAutoRotate = () => {
+  if (!controls) return
+  controls.autoRotate = false
+  
+  // 清除之前的定时器
+  if (autoRotateTimer !== null) {
+    clearTimeout(autoRotateTimer)
+    autoRotateTimer = null
+  }
+}
+
+// 延迟启用自动环绕
+const enableAutoRotateDelayed = () => {
+  // 如果详情面板打开或正在动画中，不启用自动环绕
+  if (showDetailPanel.value || isAnimating) {
+    return
+  }
+  
+  // 清除之前的定时器
+  if (autoRotateTimer !== null) {
+    clearTimeout(autoRotateTimer)
+  }
+  
+  // 延迟启用自动环绕
+  autoRotateTimer = window.setTimeout(() => {
+    if (controls && !showDetailPanel.value && !isAnimating && !isUserInteracting) {
+      controls.autoRotate = true
+      controls.autoRotateSpeed = autoRotateSpeed
+    }
+    autoRotateTimer = null
+  }, autoRotateDelay)
+}
+
+// 处理用户交互
+const handleUserInteraction = () => {
+  isUserInteracting = true
+  lastInteractionTime = performance.now()
+  disableAutoRotate()
+  enableAutoRotateDelayed()
+}
+
+// 检查用户是否停止交互
+const checkUserInteractionTimeout = () => {
+  const now = performance.now()
+  // 如果超过延迟时间没有交互，认为用户已停止操作
+  if (isUserInteracting && now - lastInteractionTime > autoRotateDelay) {
+    isUserInteracting = false
   }
 }
 
@@ -537,8 +614,41 @@ const unhighlightSprite = (sprite: Sprite) => {
 const addEevent = () => {
   const canvas = renderer.domElement
 
-  // 鼠标移动事件 - 显示tooltip
+  // 监听鼠标拖动开始和移动（只在按下鼠标时）
+  let isMouseDown = false
+  canvas.addEventListener('mousedown', () => {
+    isMouseDown = true
+    if (!isAnimating && controls.enabled) {
+      handleUserInteraction()
+    }
+  })
+
+  canvas.addEventListener('mouseup', () => {
+    isMouseDown = false
+  })
+
+  canvas.addEventListener('mouseleave', () => {
+    isMouseDown = false
+  })
+
+  // 监听滚轮事件
+  canvas.addEventListener('wheel', () => {
+    if (!isAnimating && controls.enabled) {
+      handleUserInteraction()
+    }
+  }, { passive: true })
+
+  // 鼠标移动事件 - 显示tooltip 和检测用户交互
   canvas.addEventListener('mousemove', (ev) => {
+    // 检测用户交互（仅在按下鼠标时）
+    if (isMouseDown && !isAnimating && controls.enabled) {
+      lastInteractionTime = performance.now()
+      if (!isUserInteracting) {
+        handleUserInteraction()
+      }
+    }
+
+    // 显示 tooltip
     if (showDetailPanel.value) return // 如果详情面板已打开，不显示tooltip
 
     const rect = canvas.getBoundingClientRect()
@@ -610,6 +720,9 @@ const addEevent = () => {
         selectedData.value = userData
         showDetailPanel.value = true
 
+        // 打开详情面板时禁用自动环绕
+        disableAutoRotate()
+
         // 高亮选中的sprite
         if (lastIntersectedSprite && lastIntersectedSprite !== meshSprite) {
           unhighlightSprite(lastIntersectedSprite)
@@ -678,6 +791,10 @@ const loaderModel = async () => {
 const cleanup = () => {
   if (animationId) {
     cancelAnimationFrame(animationId)
+  }
+  if (autoRotateTimer !== null) {
+    clearTimeout(autoRotateTimer)
+    autoRotateTimer = null
   }
   if (renderer) {
     renderer.dispose()
