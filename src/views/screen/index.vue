@@ -17,12 +17,13 @@
     <Logo />
     <Header />
     <Scene />
-    <DevicePanel />
-    <Charts />
+    <DevicePanel v-if="isVisible" />
+    <Charts v-if="isVisible" />
   </ScaleScreen>
 </template>
 
 <script setup lang="ts">
+import { ref, onMounted, onUnmounted } from 'vue'
 import 'element-plus/dist/index.css'
 import Logo from './components/Logo.vue'
 import Scene from './components/Scene.vue'
@@ -31,4 +32,20 @@ import Header from './components/Header.vue'
 import ScaleScreen from '@/components/screen'
 import screenBg from '@/assets/screen/bg.png'
 import DevicePanel from './components/DevicesPanel.vue'
+
+const isVisible = ref(true)
+
+const handleKeyPress = (event: KeyboardEvent) => {
+  if (event.key.toLowerCase() === 'h') {
+    isVisible.value = !isVisible.value
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeyPress)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeyPress)
+})
 </script>

@@ -10,7 +10,7 @@
           </div>
         </template>
         <div class="device-text">
-          <span class="device-value">24</span>
+          <span class="device-value">{{ temperature }}</span>
           <span class="device-unit">℃</span>
         </div>
         <div>环境温度</div>
@@ -23,7 +23,7 @@
           </div>
         </template>
         <div class="device-text">
-          <span style="color: var(--ds-waring)" class="device-value">88</span>
+          <span style="color: var(--ds-waring)" class="device-value">{{ humidity }}</span>
           <span class="device-unit">%</span>
         </div>
         <div>环境湿度</div>
@@ -36,7 +36,7 @@
           </div>
         </template>
         <div class="device-text">
-          <span class="device-value">12800</span>
+          <span class="device-value">{{ illumination }}</span>
           <span class="device-unit">Lux</span>
         </div>
         <div>照度</div>
@@ -94,7 +94,9 @@
         <span>设备预警</span>
       </PanelHeader>
       <ElScrollbar ref="scrollbarRef" height="230px" style="margin-top: 24px" always>
-        <MessageItem v-bind="message" v-for="message in messages" :key="message.title" />
+        <div class="scroll-content">
+          <MessageItem v-bind="message" v-for="message in displayMessages" :key="message.title + message.time" />
+        </div>
       </ElScrollbar>
     </Panel>
   </section>
@@ -112,8 +114,13 @@ import DeviceCamera from '../icons/DeviceCamera.vue'
 import DeviceSensor from '../icons/DeviceSensor.vue'
 import { ElScrollbar } from 'element-plus'
 import MessageItem from './MessageItem.vue'
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { MessageStatus, type IMessage } from './types'
+
+// 环境数据
+const temperature = ref(24)
+const humidity = ref(88)
+const illumination = ref(12800)
 
 const messages = ref<IMessage[]>([
   {
@@ -138,13 +145,88 @@ const messages = ref<IMessage[]>([
       'Lorem ipsum dolor sit amet, consectetur adipisicing elit. Cum error omnis harum aut facere fugit laborum velit cumque tempora, adipisci suscipit, enim dicta est natus labore? Error odit aperiam culpa.',
   },
   {
-    time: '10/10 10:13',
+    time: '10/10 10:14',
     status: MessageStatus.waring,
     title: '预警4',
     message:
       'Lorem ipsum dolor sit amet, consectetur adipisicing elit. Cum error omnis harum aut facere fugit laborum velit cumque tempora, adipisci suscipit, enim dicta est natus labore? Error odit aperiam culpa.',
   },
+  {
+    time: '10/10 10:15',
+    status: MessageStatus.info,
+    title: '预警5',
+    message:
+      'Lorem ipsum dolor sit amet, consectetur adipisicing elit. Cum error omnis harum aut facere fugit laborum velit cumque tempora, adipisci suscipit, enim dicta est natus labore? Error odit aperiam culpa.',
+  },
+  {
+    time: '10/10 10:16',
+    status: MessageStatus.waring,
+    title: '预警6',
+    message:
+      'Lorem ipsum dolor sit amet, consectetur adipisicing elit. Cum error omnis harum aut facere fugit laborum velit cumque tempora, adipisci suscipit, enim dicta est natus labore? Error odit aperiam culpa.',
+  },
 ])
+
+// 用于显示的重复消息列表，实现无缝滚动
+const displayMessages = computed(() => {
+  return [...messages.value, ...messages.value]
+})
+
+// 添加自动滚动功能
+const scrollbarRef = ref<InstanceType<typeof ElScrollbar>>()
+let scrollInterval: number | null = null
+let scrollStep = 1
+
+const startAutoScroll = () => {
+  if (scrollInterval) {
+    clearInterval(scrollInterval)
+  }
+
+  scrollInterval = setInterval(() => {
+    if (scrollbarRef.value) {
+      const scrollContainer = scrollbarRef.value.$el.querySelector('.el-scrollbar__wrap')
+      if (scrollContainer) {
+        const scrollHeight = scrollContainer.scrollHeight
+        const clientHeight = scrollContainer.clientHeight
+        const maxScrollTop = scrollHeight - clientHeight
+
+        // 实现连续滚动效果
+        if (scrollContainer.scrollTop >= maxScrollTop / 2) {
+          // 滚动到一半时回到顶部，实现无缝循环
+          scrollContainer.scrollTop = 0
+        } else {
+          // 平滑向下滚动
+          scrollContainer.scrollTop += scrollStep
+        }
+      }
+    }
+  }, 50) // 更频繁的滚动间隔，实现平滑效果
+}
+
+// 更新环境数据的函数
+const updateEnvironmentData = () => {
+  // 温度在 20-30 度之间随机变化
+  temperature.value = Math.round(20 + Math.random() * 10)
+  // 湿度在 40-95 之间随机变化
+  humidity.value = Math.round(40 + Math.random() * 55)
+  // 照度在 10000-15000 之间随机变化
+  illumination.value = Math.round(10000 + Math.random() * 5000)
+}
+
+onMounted(() => {
+  // 组件挂载后开始自动滚动
+  startAutoScroll()
+
+  // 开始环境数据更新
+  const dataUpdateInterval = setInterval(updateEnvironmentData, 3000) // 每3秒更新一次数据
+})
+
+onUnmounted(() => {
+  // 组件卸载时清除定时器
+  if (scrollInterval) {
+    clearInterval(scrollInterval)
+  }
+})
 </script>
 
 <style lang="scss" scoped>
@@ -280,5 +362,10 @@ const messages = ref<IMessage[]>([
   .device-common {
     padding: 24px 24px 32px 24px;
   }
+}
+
+// 添加滚动内容的样式
+.scroll-content {
+  transition: transform 0.3s ease;
 }
 </style>
